@@ -7,6 +7,15 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
+// function declarations
+void displayProcessFDTable(ProcessFileInfo* processArray, int processCount);
+void displaySystemFDTable(ProcessFileInfo* processArray, int processCount);
+void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount);
+void displayCompositeFDTable(ProcessFileInfo* processArray, int processCount);
+void displayFDSummaryTable(ProcessFileInfo* processArray, int processCount);
+ProcessFileInfo* getProcessFileInfo(pid_t targetPID);
+void freeProcessFileInfo(ProcessFileInfo* processData);
+
 // struct for file descriptor 
 typedef struct {
     int fileDescriptor;
@@ -27,14 +36,6 @@ typedef struct {
     int fdArrayCapacity;
 } ProcessFileInfo;
 
-// function declarations
-void displayProcessFDTable(ProcessFileInfo* processArray, int processCount);
-void displaySystemFDTable(ProcessFileInfo* processArray, int processCount);
-void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount);
-void displayCompositeFDTable(ProcessFileInfo* processArray, int processCount);
-void displayFDSummaryTable(ProcessFileInfo* processArray, int processCount);
-ProcessFileInfo* getProcessFileInfo(pid_t targetPID);
-void freeProcessFileInfo(ProcessFileInfo* processData);
 
 // helper function to convert str to int
 int stringToInt(const char* str) {
@@ -72,11 +73,7 @@ ProcessFileInfo* getProcessFileInfo(pid_t targetPID) {
     char pidStr[32];
     struct stat procStat;
 
-    // Build the comm path
-    strcpy(procPath, "/proc/");
-    sprintf(pidStr, "%d", targetPID);
-    strcat(procPath, pidStr);
-    strcat(procPath, "/comm");
+    sprintf(procPath, "/proc/%d/comm", targetPID);
 
     FILE* commFile = fopen(procPath, "r");
     if (commFile) {
@@ -90,15 +87,14 @@ ProcessFileInfo* getProcessFileInfo(pid_t targetPID) {
     }
 
     // Build the proc path
-    strcpy(procPath, "/proc/");
-    strcat(procPath, pidStr);
+    sprintf(procPath, "/proc/%d", targetPID);
 
     if (stat(procPath, &procStat) == 0) {
         processInfo->processOwnerUID = procStat.st_uid;
     }
 
     // Build the fd directory path
-    strcat(procPath, "/fd");
+    sprintf(procPath, "/proc/%d/fd", targetPID);
     DIR* fdDirectory = opendir(procPath);
     if (!fdDirectory) {
         free(processInfo->fdArray);
@@ -126,15 +122,9 @@ ProcessFileInfo* getProcessFileInfo(pid_t targetPID) {
             fdInfo->fileDescriptor = stringToInt(fdEntry->d_name);
 
             // Build the fd path
-            char fdPath[4096];
-            strcpy(fdPath, procPath);
-            strcat(fdPath, "/");
-            strcat(fdPath, fdEntry->d_name);
-            
-            // Copy the path directly
-            strcpy(fdInfo->filePath, fdPath);
+            sprintf(fdInfo->filePath, "/proc/%d/fd/%s", targetPID, fdEntry->d_name);
 
-            if (stat(fdPath, &procStat) == 0) {
+            if (stat(fdInfo->filePath, &procStat) == 0) {
                 fdInfo->fileMode = procStat.st_mode;
                 fdInfo->fileOwnerUID = procStat.st_uid;
                 fdInfo->fileOwnerGID = procStat.st_gid;
@@ -238,7 +228,7 @@ void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount) {
     printf("\nVnodes FD Table\n");
     printf("===============\n");
     printf("%-10s %-8s %-8s %-8s\n", "Inode", "UID", "GID", "Mode");
-    printf("--------------------------------------------------\n");
+    printf("-----------------------=-----------\n");
     
     for (int processIndex = 0; processIndex < processCount; processIndex++) {
         ProcessFileInfo* currentProcess = &processArray[processIndex];
@@ -255,7 +245,7 @@ void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount) {
 
 int main(int argc, char* argv[]) {
     char* cmdarg;
-    
+
     if (argc > 1) {
         cmdarg = argv[1];
     } else {
