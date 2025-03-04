@@ -7,16 +7,7 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
-// function declarations
-void displayProcessFDTable(ProcessFileInfo* processArray, int processCount);
-void displaySystemFDTable(ProcessFileInfo* processArray, int processCount);
-void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount);
-void displayCompositeFDTable(ProcessFileInfo* processArray, int processCount);
-void displayFDSummaryTable(ProcessFileInfo* processArray, int processCount);
-ProcessFileInfo* getProcessFileInfo(pid_t targetPID);
-void freeProcessFileInfo(ProcessFileInfo* processData);
-
-// struct for file descriptor 
+// Structures must be defined before function declarations
 typedef struct {
     int fileDescriptor;
     char filePath[1024];
@@ -26,7 +17,6 @@ typedef struct {
     ino_t fileInode;
 } FileDescriptorInfo;
 
-// struct for process information
 typedef struct {
     pid_t processID;
     char processName[128];
@@ -36,15 +26,23 @@ typedef struct {
     int fdArrayCapacity;
 } ProcessFileInfo;
 
+// Function declarations
+void displayProcessFDTable(ProcessFileInfo* processArray, int processCount);
+void displaySystemFDTable(ProcessFileInfo* processArray, int processCount);
+void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount);
+void displayCompositeFDTable(ProcessFileInfo* processArray, int processCount);
+void displayFDSummaryTable(ProcessFileInfo* processArray, int processCount);
+ProcessFileInfo* getProcessFileInfo(pid_t targetPID);
+void freeProcessFileInfo(ProcessFileInfo* processData);
 
-// helper function to convert str to int
+// Helper function
 int stringToInt(const char* str) {
     int result = 0;
     int i = 0;
 
     while (str[i] != '\0') {
         if (str[i] < '0' || str[i] > '9') {
-            return -1;  
+            return -1;
         }
         result = result * 10 + (str[i] - '0');
         i++;
@@ -70,7 +68,6 @@ ProcessFileInfo* getProcessFileInfo(pid_t targetPID) {
     }
 
     char procPath[4096];
-    char pidStr[32];
     struct stat procStat;
 
     sprintf(procPath, "/proc/%d/comm", targetPID);
