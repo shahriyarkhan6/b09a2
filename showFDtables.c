@@ -33,7 +33,7 @@ void displaySystemFDTable(ProcessFileInfo* processArray, int processCount);
 void displayVnodeFDTable(ProcessFileInfo* processArray, int processCount);
 void displayCompositeFDTable(ProcessFileInfo* processArray, int processCount);
 void displayFDSummaryTable(ProcessFileInfo* processArray, int processCount);
-ProcessFileInfo* getProcessFileInfo(pid_t target_pid);
+ProcessFileInfo* getProcessFileInfo(pid_t targetPID);
 void freeProcessFileInfo(ProcessFileInfo* processData);
 
 // helper function to convert str to int
@@ -53,60 +53,54 @@ int stringToInt(const char* str) {
 
 // getting process information
 
-ProcessFileInfo* getProcessFileInfo(pid_t target_pid) {
-     ProcessFileInfo* processInfo = malloc(sizeof(ProcessFileInfo));
-     if (!processInfo) {
-        printf("memory allocation failed\n");
+ProcessFileInfo* getProcessFileInfo(pid_t targetPID) {
+    ProcessFileInfo* processInfo = malloc(sizeof(ProcessFileInfo));
+    if (!processInfo) {
         return NULL;
-     }
+    }
 
-    processInfo->processID = target_pid;
+    processInfo->processID = targetPID;
     processInfo->fdCount = 0;
     processInfo->fdArrayCapacity = 10;
     processInfo->fdArray = malloc(processInfo->fdArrayCapacity * sizeof(FileDescriptorInfo));
-
     if (!processInfo->fdArray) {
-        printf("memory allocation failed\n");
         free(processInfo);
         return NULL;
     }
 
-    // building the comm path
-    char proc_path[4096];
-    strcpy(proc_path, "/proc/");
-    char pid_str[32];
-    sprintf(pid_str, "%d", target_pid);
-    strcat(proc_path, pid_str);
-    strcat(proc_path, "/comm");
-
-    FILE* comm_file = fopen(proc_path, "r");
-    if (!comm_file) {
-        printf("failed to open comm file\n");
-        free(processInfo->fdArray);
-        free(processInfo);
-        return NULL;
-    }
-    if (fgets(processInfo->processName, sizeof(processInfo->processName), comm_file)) {
-            char* newlineChar = strchr(processInfo->processName, '\n');
-            if (newlineChar) *newlineChar = '\0';
-        }
-        fclose(comm_file);
-    }
-
-    // building  proc path
-    strcpy(proc_path, "/proc/");
-    strcat(proc_path, pid_str);
-
+    char procPath[4096];
+    char pidStr[32];
     struct stat procStat;
-    if (stat(proc_path, &procStat) == 0) {
+
+    // Build the comm path
+    strcpy(procPath, "/proc/");
+    sprintf(pidStr, "%d", targetPID);
+    strcat(procPath, pidStr);
+    strcat(procPath, "/comm");
+
+    FILE* commFile = fopen(procPath, "r");
+    if (commFile) {
+        if (fgets(processInfo->processName, sizeof(processInfo->processName), commFile)) {
+            char* newlineChar = strchr(processInfo->processName, '\n');
+            if (newlineChar) {
+                *newlineChar = '\0';
+            }
+        }
+        fclose(commFile);
+    }
+
+    // Build the proc path
+    strcpy(procPath, "/proc/");
+    strcat(procPath, pidStr);
+
+    if (stat(procPath, &procStat) == 0) {
         processInfo->processOwnerUID = procStat.st_uid;
     }
 
-    // building the fd directory path
-    strcat(proc_path, "/fd");
-    DIR* fdDirectory = opendir(proc_path);
+    // Build the fd directory path
+    strcat(procPath, "/fd");
+    DIR* fdDirectory = opendir(procPath);
     if (!fdDirectory) {
-        printf("failed to open fd directory\n");
         free(processInfo->fdArray);
         free(processInfo);
         return NULL;
@@ -114,44 +108,41 @@ ProcessFileInfo* getProcessFileInfo(pid_t target_pid) {
 
     struct dirent* fdEntry;
     while ((fdEntry = readdir(fdDirectory)) != NULL) {
-        if (fdEntry->d_name[0] == '.') continue;
-
-        if (processInfo->fdCount >= processInfo->fdArrayCapacity) {
-            processInfo->fdArrayCapacity *= 2;
-
-            FileDescriptorInfo* newFDArray = realloc(processInfo->fdArray, 
-
-                processInfo->fdArrayCapacity * sizeof(FileDescriptorInfo));
-            if (!newFDArray) {
-                printf("memory allocation failed\n");
-                closedir(fdDirectory);
-                free(processInfo->fdArray);
-                free(processInfo);
-                return NULL;
+        if (fdEntry->d_name[0] >= '0' && fdEntry->d_name[0] <= '9') {
+            if (processInfo->fdCount >= processInfo->fdArrayCapacity) {
+                processInfo->fdArrayCapacity *= 2;
+                FileDescriptorInfo* newFDArray = realloc(processInfo->fdArray, 
+                    processInfo->fdArrayCapacity * sizeof(FileDescriptorInfo));
+                if (!newFDArray) {
+                    closedir(fdDirectory);
+                    free(processInfo->fdArray);
+                    free(processInfo);
+                    return NULL;
+                }
+                processInfo->fdArray = newFDArray;
             }
-            processInfo->fdArray = newFDArray;
+
+            FileDescriptorInfo* fdInfo = &processInfo->fdArray[processInfo->fdCount];
+            fdInfo->fileDescriptor = stringToInt(fdEntry->d_name);
+
+            // Build the fd path
+            char fdPath[4096];
+            strcpy(fdPath, procPath);
+            strcat(fdPath, "/");
+            strcat(fdPath, fdEntry->d_name);
+            
+            // Copy the path directly
+            strcpy(fdInfo->filePath, fdPath);
+
+            if (stat(fdPath, &procStat) == 0) {
+                fdInfo->fileMode = procStat.st_mode;
+                fdInfo->fileOwnerUID = procStat.st_uid;
+                fdInfo->fileOwnerGID = procStat.st_gid;
+                fdInfo->fileInode = procStat.st_ino;
+            }
+
+            processInfo->fdCount++;
         }
-
-        FileDescriptorInfo* fdInfo = &processInfo->fdArray[processInfo->fdCount];
-        
-        fdInfo->fileDescriptor = stringToInt(fdEntry->d_name);
-
-        // Build the fd path
-        char fdPath[4096];
-        strcpy(fdPath, proc_path);
-        strcat(fdPath, "/");
-        strcat(fdPath, fdEntry->d_name);
-        
-        strcpy(fdInfo->filePath, fdPath);
-
-        if (stat(fdPath, &procStat) == 0) {
-            fdInfo->fileMode = procStat.st_mode;
-            fdInfo->fileOwnerUID = procStat.st_uid;
-            fdInfo->fileOwnerGID = procStat.st_gid;
-            fdInfo->fileInode = procStat.st_ino;
-        }
-
-        processInfo->fdCount++;
     }
 
     closedir(fdDirectory);
